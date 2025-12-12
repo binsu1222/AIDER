@@ -48,7 +48,22 @@ const StockTradingAnalyzer = () => {
     return data;
   };
 
-  React.useEffect(() => {
+  // 1. 컴포넌트 마운트 시 거래 내역 불러오기
+React.useEffect(() => {
+  const loadTrades = async () => {
+    try {
+      const allTrades = await stockApi.getAllTrades();
+      setTrades(allTrades);
+    } catch (error) {
+      console.error('거래 내역 로딩 실패:', error);
+    }
+  };
+  
+  loadTrades();
+}, []);
+
+// 2. 차트 페이지에서 주가 데이터 불러오기
+React.useEffect(() => {
   const fetchData = async () => {
     if (currentPage === 'chart' && trades.length > 0) {
       const stockName = trades[0].stockName;
@@ -83,9 +98,11 @@ const StockTradingAnalyzer = () => {
 }, [currentPage, trades]);
 
 
-  const addTrade = () => {
-    if (currentTrade.stockName && currentTrade.date && currentTrade.price && currentTrade.quantity) {
-      setTrades([...trades, { ...currentTrade, id: Date.now() }]);
+  const addTrade = async () => {
+  if (currentTrade.stockName && currentTrade.date && currentTrade.price && currentTrade.quantity) {
+    try {
+      const response = await stockApi.createTrade(currentTrade);
+      setTrades([...trades, response]);
       setCurrentTrade({
         stockName: '',
         tradeType: 'buy',
@@ -93,12 +110,22 @@ const StockTradingAnalyzer = () => {
         price: '',
         quantity: ''
       });
+    } catch (error) {
+      console.error('거래 추가 실패:', error);
+      alert('거래 추가에 실패했습니다.');
     }
-  };
+  }
+};
 
-  const removeTrade = (id) => {
+  const removeTrade = async (id) => {
+  try {
+    await stockApi.deleteTrade(id);
     setTrades(trades.filter(trade => trade.id !== id));
-  };
+  } catch (error) {
+    console.error('거래 삭제 실패:', error);
+    alert('거래 삭제에 실패했습니다.');
+  }
+};
 
   const analyzeTrading = () => {
     setLoading(true);

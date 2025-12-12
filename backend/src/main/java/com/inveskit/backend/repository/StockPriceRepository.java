@@ -27,4 +27,8 @@ public interface StockPriceRepository extends JpaRepository<StockPrice, Long> {
 
     //전체 데이터 개수 확인용
     long count();
+
+
+    @Query("SELECT DISTINCT sp.stockName FROM StockPrice sp ORDER BY sp.stockName")
+    List<String> findDistinctStockNames();
 }

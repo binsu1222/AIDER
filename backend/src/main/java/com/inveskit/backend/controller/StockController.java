@@ -103,4 +103,13 @@ public class StockController {
         log.info("Bulk initialization completed. Success: {}, Failed: {}", successCount, failCount);
         return ResponseEntity.ok(summary);
     }
+
+    // 종목 검색 (자동완성)
+    // GET /api/stocks/search?keyword=삼성
+    @GetMapping("/search")
+    public ResponseEntity<List<String>> searchStocks(@RequestParam String keyword) {
+        log.info("Searching stocks with keyword: {}", keyword);
+        List<String> results = stockPriceService.searchStockNames(keyword);
+        return ResponseEntity.ok(results);
+    }
 }

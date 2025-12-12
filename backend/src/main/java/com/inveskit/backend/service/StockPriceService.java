@@ -92,4 +92,16 @@ public class StockPriceService {
     public long getDataCount() {
         return stockPriceRepository.count();
     }
+
+    @Transactional(readOnly = true)
+    public List<String> searchStockNames(String keyword) {
+        log.info("Searching for stocks with keyword: {}", keyword);
+
+        List<String> allStocks = stockPriceRepository.findDistinctStockNames();
+
+        return allStocks.stream()
+                .filter(name -> name.contains(keyword))
+                .limit(10)
+                .collect(Collectors.toList());
+    }
 }
