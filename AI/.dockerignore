@@ -1,10 +1,25 @@
-AI/__pycache__
-AI/venv
-AI/.env
-AI/local_model
-AI/chroma_db
-AI/*.pyc
-backend/
-frontend/
-.git
-.DS_Store
+# .dockerignore
+# 1. 가상환경 절대 복사 금지 (가장 중요)
+venv/
+AI/venv/
+.venv/
+env/
+
+# 2. 로컬에 다운받은 무거운 AI 모델과 DB 제외
+local_model/
+AI/local_model/
+chroma_db/
+AI/chroma_db/
+
+# 3. 깃 데이터 및 캐시 제외
+.git/
+.gitignore
+__pycache__/
+*/__pycache__/
+*.pyc
+*.DS_Store
+.env
+
+# 4. 기타 불필요한 파일
+Dockerfile
+README.md
