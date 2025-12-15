@@ -1,0 +1,8 @@
+.DS_Store
+.idea/
+venv/
+.env
+local_model
+chroma_db/
+*.pyc
+terminal_code.txt
