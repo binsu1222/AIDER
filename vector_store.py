@@ -13,6 +13,9 @@ def get_embeddings():
     model_kwargs = {'device': 'cpu'} 
     encode_kwargs = {'normalize_embeddings': True}
     
+    # 디버깅용 로그 추가
+    print(f"[Debug] 임베딩 모델 로드 경로: {model_name}")
+    
     return HuggingFaceEmbeddings(
         model_name=model_name,
         model_kwargs=model_kwargs,

@@ -1,5 +1,23 @@
+import re
 from youtube_transcript_api import YouTubeTranscriptApi
-video_id = 'EMfQuZkzmuc'
+
+def extract_video_id(url):
+    """
+    유튜브 URL에서 video_id를 추출하는 함수
+    지원 형식:
+    - https://www.youtube.com/watch?v=VIDEO_ID
+    - https://youtu.be/VIDEO_ID
+    """
+    try:
+        # 정규표현식을 사용하여 11자리의 ID 추출
+        regex = r"(?:v=|\/)([0-9A-Za-z_-]{11}).*"
+        match = re.search(regex, url)
+        if match:
+            return match.group(1)
+        return None
+    except:
+        return None
+
 def transcript(video_id):
     try:
         api = YouTubeTranscriptApi()

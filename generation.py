@@ -1,121 +1,141 @@
+# generation.py
 import os
+import json
 from openai import OpenAI
-from typing import List
-from langchain_core.documents import Document
+from typing import List, Any
+from datetime import datetime, timedelta
 
-# 환경 변수에서 Hugging Face API 토큰을 불러오기
+# 환경 변수 체크
 if "HF_TOKEN" not in os.environ:
-    print("[ERROR] HF_TOKEN 환경 변수가 설정되지 않았습니다.")
-    print("Hugging Face API 토큰을 환경 변수에 설정해주세요.")
+    print("[Warning] HF_TOKEN 환경 변수가 없습니다.")
 
 client = OpenAI(
-    base_url="https://router.huggingface.co/v1", # API 접속 주소
-    api_key=os.environ.get("HF_TOKEN", "dummy_key"), # 토큰이 없으면 더미 '키' 사용 (실행 실패)
-    timeout=60.0 # 응답 대기 시간 설정 (초)
+    base_url="https://router.huggingface.co/v1",
+    api_key=os.environ.get("HF_TOKEN", "dummy_key"),
+    timeout=90.0
 )
 
-MODEL_NAME = "openai/gpt-oss-20b:groq" 
+MODEL_NAME = "openai/gpt-oss-20b:groq"
 
-#검색된 청크(문맥)와 사용자 질문을 통합하여 LLM에 전달할 최종 프롬프트를 구성합니다.
-def make_rag_prompt(query: str, retrieval_results: List[Document]) -> str:
-    print("\n[Generation] RAG 프롬프트 구성 !")
+# [Helper] 날짜 문자열 비교를 위한 함수
+def get_price_context(trade_date_str: str, stock_prices: List[Any]) -> str:
+    """
+    매매일(trade_date)을 기준으로 앞뒤 5일치 주가 데이터만 뽑아서 문자열로 만듭니다.
+    데이터가 너무 많으면 LLM이 헷갈려하고, 날짜가 안 맞으면 분석을 못하기 때문입니다.
+    """
+    try:
+        # 날짜 포맷 파싱 (YYYY-MM-DD)
+        target_date = datetime.strptime(trade_date_str, "%Y-%m-%d")
+        
+        relevant_prices = []
+        for p in stock_prices:
+            # p가 객체인지 dict인지 확인하여 처리
+            p_date_str = p.date if hasattr(p, 'date') else p['date']
+            p_price = p.closePrice if hasattr(p, 'closePrice') else p['closePrice']
+            
+            p_date = datetime.strptime(p_date_str, "%Y-%m-%d")
+            
+            # 매매일 기준 과거 10일 ~ 미래 5일 데이터만 가져오기 (문맥 파악용)
+            if (target_date - timedelta(days=10)) <= p_date <= (target_date + timedelta(days=5)):
+                relevant_prices.append(f"- {p_date_str}: {p_price}원")
+        
+        if not relevant_prices:
+            return "(해당 날짜 주변의 주가 데이터가 없습니다. 분석 불가)"
+            
+        return "\n".join(relevant_prices)
+        
+    except Exception as e:
+        print(f"[Error] 날짜 처리 중 오류: {e}")
+        return "(날짜 형식 오류로 데이터 추출 실패)"
+
+def make_rag_prompt(video_context: str, user_data: Any) -> str:
+    print("\n[Generation] 매수 타점 분석 프롬프트 구성 중...")
     
-    # 검색된 청크들을 하나의 문자열로 결합
-    context_text = "\n\n---\n\n".join([doc.page_content for doc in retrieval_results])
+    # 매매 기록 하나하나를 분석할 수 있도록 포맷팅
+    trades_analysis_text = ""
     
-    # LLM에게 역할과 제약 조건을 부여하는 시스템 프롬프트 구성
+    for i, trade in enumerate(user_data.trades):
+        # 객체 접근 방식 통일 (Pydantic 모델인 경우)
+        t_date = trade.date
+        t_name = trade.stockName
+        t_type = "매수(Buy)" if trade.tradeType == 'buy' else "매도(Sell)"
+        t_price = trade.price
+        
+        # 해당 매매일 주변의 주가 흐름 가져오기
+        price_context = get_price_context(t_date, user_data.stockPrices)
+        
+        trades_analysis_text += f"""
+        [매매 {i+1}]
+        - 종목: {t_name}
+        - 날짜: {t_date}
+        - 행위: {t_type} (가격: {t_price}원)
+        - 당시 주가 흐름:
+        {price_context}
+        --------------------------------
+        """
+
     PROMPT_TEMPLATE = """
-    당신은 사용자에게 맞춤형 투자 조언을 제공하는 **최고의 주식 전문가 AI**입니다.
+    당신은 주식 초보자를 위한 **친절하고 예리한 투자 멘토 AI**입니다.
     
-    **[역할 및 지시 사항]**
-    1. **전문성 유지**: 당신의 모든 답변은 전문적인 주식 시장 분석가 및 투자 전략가의 관점에서 제공되어야 합니다.
-    2. **문맥 기반 조언**: 제공된 문맥(Context)에 포함된 **매매 전략**에 기반하여 사용자 질문(Question)에 대해 구체적이고 자세하게 조언을 생성해야 합니다.
-    3. **데이터 가정**: 질문에 '사용자의 매매 기록'과 '종목의 종가 데이터'가 포함되어 있다고 가정하고, 이를 활용하여 조언을 생성합니다.
-    4. **정보 부족 시**: 만약 문맥에 답변할 충분한 매매 전략 정보가 없다면, 조언을 생성하지 말고 반드시 아래 문구를 사용하세요.
-       "제공된 문맥으로는 해당 전략에 기반한 조언을 생성할 수 없습니다. 유튜브 영상 분석 결과를 추가해주세요."
-    
-    **[출력 형식]**
-    당신의 답변은 **반드시** 아래와 같은 **JSON 형식**이어야 합니다. 다른 형식의 텍스트는 일절 포함하지 마세요.
-    
-    ```json
-    {{
-        "텍스트": "[여기에 전문가의 투자 조언 내용을 상세히 작성합니다.]"
-    }}
-    ```
-    
-    Context:
+    **[역할]**
+    사용자의 '매매 기록'과 '당시 주가 흐름'을 보고, **유튜브 영상의 전략(Context)**에 비추어 잘한 매매인지 못한 매매인지 평가해주세요.
+    특히 **'매수(Buy)'**인 경우, 진입 타점이 적절했는지 집중적으로 분석하세요.
+
+    **[영상 전략 내용 (Context)]**
     {context}
-    
-    Question: {question}
-    
-    Assistant:
+
+    **[사용자 매매 기록 및 주가 상황]**
+    {trades_context}
+
+    **[지시 사항]**
+    1. 주가 데이터가 매매일과 맞지 않거나 부족하면 "데이터가 부족하여 정확한 분석이 어렵습니다"라고 솔직하게 말하세요.
+    2. 데이터가 있다면, 전략에 근거하여 "추격 매수였다", "눌림목을 잘 잡았다" 등으로 구체적으로 조언하세요.
+    3. 반드시 아래 JSON 형식으로만 답변하세요.
+
+    **[출력 형식 (JSON)]**
+    {{
+        "analysis": [
+            {{
+                "trade_id": 1,
+                "type": "매수",
+                "evaluation": "잘한 점/못한 점 평가 내용",
+                "advice": "다음 투자를 위한 구체적 조언"
+            }}
+        ],
+        "total_score": 80 (0~100 사이 점수)
+    }}
     """
     
-    final_prompt = PROMPT_TEMPLATE.format(context=context_text, question=query)
-    
-    print(f"  - 검색된 청크 개수: {len(retrieval_results)}개")
-    # print(f"  - 최종 프롬프트 (일부):\n{final_prompt[:500]}...")
-
+    final_prompt = PROMPT_TEMPLATE.format(
+        context=video_context,
+        trades_context=trades_analysis_text
+    )
     return final_prompt
 
-#검색 결과와 질문을 바탕으로 LLM을 호출하여 최종 답변을 생성합니다.
-def generate_answer(query: str, retrieval_results: List[Document]) -> str:
-    rag_prompt = make_rag_prompt(query, retrieval_results)
+def generate_answer(video_context: str, user_data: Any) -> dict:
+    rag_prompt = make_rag_prompt(video_context, user_data)
     
-    print(f"[Generation] LLM ({MODEL_NAME}) 호출 시작!")
+    print(f"[Generation] LLM 호출 시작!")
 
     try:
-        # LLM 호출
         completion = client.chat.completions.create(
             model=MODEL_NAME,
-            messages=[
-                {"role": "user", "content": rag_prompt}
-            ],
+            messages=[{"role": "user", "content": rag_prompt}],
             temperature=0.1,
             max_tokens=2048,
             response_format={"type": "json_object"}
         )
         
-        # 응답 추출
         if completion.choices:
-            final_answer = completion.choices[0].message.content.strip()
-            print("[Result] 최종 답변 !")
-            print("-" * 50)
-            print(final_answer)
-            print("-" * 50)
-            return final_answer
+            content = completion.choices[0].message.content.strip()
+            try:
+                return json.loads(content)
+            except:
+                # JSON 파싱 실패시 텍스트라도 반환
+                return {"error": "JSON 파싱 실패", "raw_text": content}
         else:
-            return "LLM으로부터 유효한 응답을 받지 못했습니다."
+            return {"error": "No response"}
 
     except Exception as e:
-        error_message = f"[Error] LLM 호출 실패: {e}"
-        print(error_message)
-        # Hugging Face Router를 사용하는 경우 모델 이름 또는 토큰 오류가 가장 흔합니다.
-        if "API key" in str(e) or "Unauthorized" in str(e):
-            print("  -> HF_TOKEN이 유효한지, 환경 변수에 정확히 설정되었는지 확인하세요.")
-        if "404" in str(e) or "Invalid model" in str(e):
-            print(f"  -> 모델 이름 ({MODEL_NAME})이 Hugging Face Router에서 유효한지 확인하세요.")
-        
-        return "LLM 응답 생성 중 오류 발생. 로그를 확인하세요."
-
-# --- 테스트 코드 (main.py에서 이 함수를 사용할 예정) ---
-if __name__ == "__main__":
-    # 이 부분은 main.py에서 vector_store.py를 통해 검색 결과를 받은 후 호출됩니다.
-    
-    # 모의 검색 결과 (실제로는 vector_store.py에서 가져옴)
-    mock_results = [
-        Document(page_content="주요 매매 전략은 저가 매수 후 고가 매도이며, 장기적인 가치 투자를 지향한다."),
-        Document(page_content="분할 매수와 분산 투자는 위험 관리를 위한 핵심 원칙으로 동영상에서 강조되었다."),
-        Document(page_content="이 전략은 특히 변동성이 큰 시장에서 안정적인 수익률을 목표로 한다.")
-    ]
-    
-    test_query = "이 동영상에서 주요 매매 전략은 무엇인가요?"
-    
-    # 환경 변수 HF_TOKEN이 설정되어 있다면 실제 LLM 호출을 시도합니다.
-    if os.environ.get("HF_TOKEN"):
-        generate_answer(test_query, mock_results)
-    else:
-        print("\n[Info] HF_TOKEN이 설정되지 않아 실제 LLM 호출을 건너뛰고 프롬프트 구성만 테스트합니다.")
-        mock_prompt = make_rag_prompt(test_query, mock_results)
-        print("\n--- 구성된 프롬프트 ---")
-        print(mock_prompt)
+        print(f"[Error] LLM 호출 실패: {e}")
+        return {"error": str(e)}
