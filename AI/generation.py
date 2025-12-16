@@ -5,6 +5,7 @@ from openai import OpenAI
 from typing import List, Any
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+from collections import defaultdict
 
 load_dotenv()
 
@@ -20,98 +21,117 @@ client = OpenAI(
 
 MODEL_NAME = "openai/gpt-oss-20b:groq"
 
-# [Helper] 날짜 문자열 비교를 위한 함수
 def get_price_context(trade_date_str: str, stock_prices: List[Any]) -> str:
     """
     매매일(trade_date)을 기준으로 앞뒤 5일치 주가 데이터만 뽑아서 문자열로 만듭니다.
-    데이터가 너무 많으면 LLM이 헷갈려하고, 날짜가 안 맞으면 분석을 못하기 때문입니다.
     """
     try:
-        # 날짜 포맷 파싱 (YYYY-MM-DD)
         target_date = datetime.strptime(trade_date_str, "%Y-%m-%d")
         
         relevant_prices = []
         for p in stock_prices:
-            # p가 객체인지 dict인지 확인하여 처리
             p_date_str = p.date if hasattr(p, 'date') else p['date']
             p_price = p.closePrice if hasattr(p, 'closePrice') else p['closePrice']
             
             p_date = datetime.strptime(p_date_str, "%Y-%m-%d")
             
-            # 매매일 기준 과거 10일 ~ 미래 5일 데이터만 가져오기 (문맥 파악용)
+            # 매매일 기준 과거 10일 ~ 미래 5일 데이터만 가져오기
             if (target_date - timedelta(days=10)) <= p_date <= (target_date + timedelta(days=5)):
-                relevant_prices.append(f"- {p_date_str}: {p_price}원")
+                relevant_prices.append(f"  {p_date_str}: {p_price:,.0f}원")
         
         if not relevant_prices:
-            return "(해당 날짜 주변의 주가 데이터가 없습니다. 분석 불가)"
+            return "  (해당 날짜 주변의 주가 데이터가 없습니다)"
             
         return "\n".join(relevant_prices)
         
     except Exception as e:
         print(f"[Error] 날짜 처리 중 오류: {e}")
-        return "(날짜 형식 오류로 데이터 추출 실패)"
+        return "  (날짜 형식 오류로 데이터 추출 실패)"
 
 def make_rag_prompt(video_context: str, user_data: Any) -> str:
-    print("\n[Generation] 매수 타점 분석 프롬프트 구성 중...")
+    print("\n[Generation] 종목별 매매 분석 프롬프트 구성 중...")
     
-    # 매매 기록 하나하나를 분석할 수 있도록 포맷팅
-    trades_analysis_text = ""
+    # 종목별로 매매 기록 그룹화
+    stocks = defaultdict(lambda: {"trades": [], "stockCode": ""})
     
-    for i, trade in enumerate(user_data.trades):
-        # 객체 접근 방식 통일 (Pydantic 모델인 경우)
-        t_date = trade.date
-        t_name = trade.stockName
-        t_type = "매수(Buy)" if trade.tradeType == 'buy' else "매도(Sell)"
-        t_price = trade.price
+    for trade in user_data.trades:
+        stock_name = trade.stockName
+        stocks[stock_name]["stockCode"] = trade.stockCode
+        stocks[stock_name]["trades"].append({
+            "date": trade.date,
+            "type": "매수" if trade.tradeType == 'buy' else "매도",
+            "price": trade.price,
+            "quantity": trade.quantity
+        })
+    
+    # 종목별 분석 텍스트 생성
+    stocks_analysis_text = ""
+    
+    for idx, (stock_name, stock_data) in enumerate(stocks.items(), 1):
+        stocks_analysis_text += f"\n{'='*50}\n"
+        stocks_analysis_text += f"[종목 {idx}] {stock_name} (코드: {stock_data['stockCode']})\n"
+        stocks_analysis_text += f"{'='*50}\n\n"
         
-        # 해당 매매일 주변의 주가 흐름 가져오기
-        price_context = get_price_context(t_date, user_data.stockPrices)
+        # 해당 종목의 모든 매매 기록
+        stocks_analysis_text += "📊 매매 내역:\n"
+        for i, trade in enumerate(stock_data["trades"], 1):
+            price_context = get_price_context(trade["date"], user_data.stockPrices)
+            
+            stocks_analysis_text += f"""
+  [{i}] {trade["date"]} - {trade["type"]}
+      - 거래가격: {trade["price"]:,.0f}원
+      - 거래수량: {trade["quantity"]}주
+      
+  📈 당시 주가 흐름:
+{price_context}
+
+"""
         
-        trades_analysis_text += f"""
-        [매매 {i+1}]
-        - 종목: {t_name}
-        - 날짜: {t_date}
-        - 행위: {t_type} (가격: {t_price}원)
-        - 당시 주가 흐름:
-        {price_context}
-        --------------------------------
-        """
+        stocks_analysis_text += f"\n{'-'*50}\n"
 
     PROMPT_TEMPLATE = """
-    당신은 주식 초보자를 위한 **친절하고 예리한 투자 멘토 AI**입니다.
-    
-    **[역할]**
-    사용자의 '매매 기록'과 '당시 주가 흐름'을 보고, **유튜브 영상의 전략(Context)**에 비추어 잘한 매매인지 못한 매매인지 평가해주세요.
-    특히 **'매수(Buy)'**인 경우, 진입 타점이 적절했는지 집중적으로 분석하세요.
+당신은 주식 초보자를 위한 **친절하고 예리한 투자 멘토 AI**입니다.
 
-    **[영상 전략 내용 (Context)]**
-    {context}
+**[역할]**
+사용자가 거래한 **각 종목별로** 모든 매매 내역을 종합하여 분석해주세요.
+유튜브 영상의 투자 전략(Context)에 비추어, 각 종목의 매수/매도 타점이 적절했는지 평가합니다.
 
-    **[사용자 매매 기록 및 주가 상황]**
-    {trades_context}
+**[영상 전략 내용 (Context)]**
+{context}
 
-    **[지시 사항]**
-    1. 주가 데이터가 매매일과 맞지 않거나 부족하면 "데이터가 부족하여 정확한 분석이 어렵습니다"라고 솔직하게 말하세요.
-    2. 데이터가 있다면, 전략에 근거하여 "추격 매수였다", "눌림목을 잘 잡았다" 등으로 구체적으로 조언하세요.
-    3. 반드시 아래 JSON 형식으로만 답변하세요.
+**[사용자의 종목별 매매 기록]**
+{stocks_context}
 
-    **[출력 형식 (JSON)]**
-    {{
-        "analysis": [
-            {{
-                "trade_id": 1,
-                "type": "매수",
-                "evaluation": "잘한 점/못한 점 평가 내용",
-                "advice": "다음 투자를 위한 구체적 조언"
-            }}
-        ],
-        "total_score": 80 (0~100 사이 점수)
-    }}
-    """
+**[분석 지침]**
+1. **종목별 통합 분석**: 각 종목의 모든 매매 내역을 하나로 묶어서 평가
+2. **주가 데이터 확인**: 주가 데이터가 부족하면 "데이터 부족으로 정확한 분석 어려움" 명시
+3. **구체적 조언**: 영상 전략을 바탕으로 "추격 매수", "눌림목 진입", "고점 매수" 등 구체적 평가
+4. **매수 타점 중심**: 특히 매수 시점이 적절했는지 집중 분석
+5. **개선 방향 제시**: 다음 투자를 위한 실용적 조언 제공
+
+**[출력 형식 (JSON)]**
+{{
+    "analysis": [
+        {{
+            "trade_id": 1,
+            "stock_name": "종목명",
+            "type": "해당 종목의 주요 매매 유형 (예: 매수 2회)",
+            "evaluation": "해당 종목의 모든 매매를 종합한 평가. 각 매매의 타이밍과 전략적 적절성을 구체적으로 분석.",
+            "advice": "이 종목에 대한 향후 투자 조언. 영상 전략을 바탕으로 개선점 제시."
+        }}
+    ],
+    "total_score": 75
+}}
+
+**중요**: 
+- trade_id는 종목 순서입니다 (매매 건수가 아님)
+- evaluation에는 해당 종목의 모든 매매 내역을 종합하여 평가하세요
+- 같은 종목에 여러 매매가 있다면, 전체 흐름을 파악하여 분석하세요
+"""
     
     final_prompt = PROMPT_TEMPLATE.format(
         context=video_context,
-        trades_context=trades_analysis_text
+        stocks_context=stocks_analysis_text
     )
     return final_prompt
 
