@@ -1,5 +1,6 @@
 import os
 import shutil
+import chromadb
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -49,14 +50,18 @@ def create_vector_db(full_text):
     print(f"  - (Chunk Size: {CHUNK_SIZE}, Overlap: {CHUNK_OVERLAP})")
     print(f"  - 생성된 청크(Chunk) 개수: {len(docs)}개")
     
-    # 메모리 기반 ChromaDB 생성 (persist_directory 제거)
+    # 명시적으로 메모리 기반 ChromaDB 클라이언트 생성
+    client = chromadb.EphemeralClient()
+    
+    # 메모리 기반 ChromaDB 생성
     _vectorstore = Chroma.from_documents(
         documents=docs,
         embedding=embeddings,
-        collection_name="investment_strategies"
+        collection_name="investment_strategies",
+        client=client  # 명시적으로 EphemeralClient 전달
     )
     
-    print(f"[ChromaDB 저장] 메모리에 데이터 저장 완료!")
+    print(f"[ChromaDB 저장] 메모리에 데이터 저장 완료! (EphemeralClient 사용)")
     return _vectorstore
 
 def search_strategy(query, k=3):
