@@ -134,6 +134,21 @@ const stockApi = {
       console.error('거래 개수 조회 실패:', error);
       throw error;
     }
+  },
+
+  // ========== Analysis API ==========
+  // AI 분석 요청
+  analyzeTrading: async (strategy, externalUrl = null) => {
+    try {
+      const response = await axios.post(`${API_BASE_URL}/analysis`, {
+        strategy,
+        externalUrl
+      });
+      return response.data;
+    } catch (error) {
+      console.error('AI 분석 실패:', error);
+      throw error;
+    }
   }
 };
 

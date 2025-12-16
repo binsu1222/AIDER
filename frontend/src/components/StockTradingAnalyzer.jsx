@@ -155,44 +155,35 @@ React.useEffect(() => {
   }
 };
 
-  const analyzeTrading = () => {
-    setLoading(true);
+  const analyzeTrading = async () => {
+  if (trades.length === 0) {
+    alert('거래 내역을 먼저 입력해주세요.');
+    return;
+  }
+
+  if (strategy === 'external' && !externalUrl) {
+    alert('외부 전략 URL을 입력해주세요.');
+    return;
+  }
+
+  setLoading(true);
+  
+  try {
+    const response = await stockApi.analyzeTrading(strategy, externalUrl);
     
-    setTimeout(() => {
-      let mockAnalysis;
-      
-      if (strategy === 'external') {
-        mockAnalysis = {
-          strategy: '외부 전략',
-          url: externalUrl,
-          summary: `외부 콘텐츠를 기반으로 ${trades.length}건의 거래를 분석했습니다.`,
-          advice: `제공하신 외부 전략 콘텐츠를 분석한 결과, 해당 전략의 핵심 원칙과 비교했을 때 다음과 같은 인사이트를 얻을 수 있습니다. 전략에서 강조하는 진입 시점과 실제 거래 타이밍 간의 일치도를 확인하고, 리스크 관리 측면에서의 개선점을 발견할 수 있습니다.`,
-          metrics: {
-            totalTrades: trades.length,
-            avgPrice: (trades.reduce((sum, t) => sum + parseFloat(t.price), 0) / trades.length).toFixed(2),
-            totalVolume: trades.reduce((sum, t) => sum + parseInt(t.quantity), 0)
-          }
-        };
-      } else {
-        mockAnalysis = {
-          strategy: strategy === 'bollinger' ? '볼린저 밴드' : '추세추종',
-          summary: `총 ${trades.length}건의 거래를 분석했습니다.`,
-          advice: strategy === 'bollinger' 
-            ? '볼린저 밴드 관점에서 분석한 결과, 상단 밴드 근처에서의 매수가 관찰됩니다. 과매수 구간에서의 진입은 리스크가 높을 수 있습니다. 중심선 부근에서의 매수 타이밍을 고려하고, 하단 밴드 이탈 시 손절매를 권장합니다.'
-            : '추세추종 전략 관점에서 보면, 상승 추세 초기 진입이 효과적입니다. 현재 거래 패턴을 보면 추세 중후반부 진입이 다수 관찰되며, 이는 수익률을 제한할 수 있습니다. 이동평균선 골든크로스 시점 전후로 진입하고, 추세 전환 신호 발생 시 신속한 청산을 권장합니다.',
-          metrics: {
-            totalTrades: trades.length,
-            avgPrice: (trades.reduce((sum, t) => sum + parseFloat(t.price), 0) / trades.length).toFixed(2),
-            totalVolume: trades.reduce((sum, t) => sum + parseInt(t.quantity), 0)
-          }
-        };
-      }
-      
-      setAnalysis(mockAnalysis);
-      setLoading(false);
-      setCurrentPage('analysis');
-    }, 1500);
-  };
+    setAnalysis(response);
+    setCurrentPage('analysis');
+    
+    console.log('AI 분석 완료:', response);
+  } catch (error) {
+    console.error('AI 분석 실패:', error);
+    alert('AI 분석에 실패했습니다. 다시 시도해주세요.');
+  } finally {
+    setLoading(false);
+  }
+};  
+
+
 
   const saveStrategy = () => {
     if (strategy === 'external' && externalUrl) {
