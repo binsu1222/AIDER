@@ -16,7 +16,8 @@ def get_embeddings():
         print("[Debug] 기존 임베딩 모델 재사용")
         return _embeddings
     
-    model_name = "jhgan/ko-sroberta-multitask"
+    # 400MB → 120MB (70% 절약)
+    model_name = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     model_kwargs = {'device': 'cpu'} 
     encode_kwargs = {'normalize_embeddings': True}
     
