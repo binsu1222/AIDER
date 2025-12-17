@@ -522,7 +522,7 @@ React.useEffect(() => {
   );
 };
 
-  const renderAnalysisPage = () => (
+  const renderAnalysisPage = () => ( 
   <div className="max-w-4xl mx-auto">
     {analysis ? (
       <div className="space-y-6">
@@ -551,12 +551,12 @@ React.useEffect(() => {
             <div className="text-center">
               <div className="text-sm text-gray-500 mb-1">종합 점수</div>
               <div className={`text-4xl font-bold ${
-                analysis.totalScore >= 80 ? 'text-emerald-600' :
-                analysis.totalScore >= 60 ? 'text-blue-600' :
-                analysis.totalScore >= 40 ? 'text-yellow-600' :
+                analysis.total_score >= 80 ? 'text-emerald-600' :
+                analysis.total_score >= 60 ? 'text-blue-600' :
+                analysis.total_score >= 40 ? 'text-yellow-600' :
                 'text-red-600'
               }`}>
-                {analysis.totalScore}
+                {analysis.total_score}
                 <span className="text-2xl text-gray-400">/100</span>
               </div>
             </div>
@@ -613,19 +613,19 @@ React.useEffect(() => {
             </div>
             <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
               <div className="text-xs text-gray-500 mb-1">종합 점수</div>
-              <div className="text-xl font-bold text-gray-900">{analysis.totalScore}점</div>
+              <div className="text-xl font-bold text-gray-900">{analysis.total_score}점</div>
             </div>
             <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
               <div className="text-xs text-gray-500 mb-1">평가 등급</div>
               <div className={`text-xl font-bold ${
-                analysis.totalScore >= 80 ? 'text-emerald-600' :
-                analysis.totalScore >= 60 ? 'text-blue-600' :
-                analysis.totalScore >= 40 ? 'text-yellow-600' :
+                analysis.total_score >= 80 ? 'text-emerald-600' :
+                analysis.total_score >= 60 ? 'text-blue-600' :
+                analysis.total_score >= 40 ? 'text-yellow-600' :
                 'text-red-600'
               }`}>
-                {analysis.totalScore >= 80 ? 'A' :
-                 analysis.totalScore >= 60 ? 'B' :
-                 analysis.totalScore >= 40 ? 'C' : 'D'}
+                {analysis.total_score >= 80 ? 'A' :
+                 analysis.total_score >= 60 ? 'B' :
+                 analysis.total_score >= 40 ? 'C' : 'D'}
               </div>
             </div>
           </div>
