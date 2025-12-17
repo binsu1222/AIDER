@@ -1,6 +1,5 @@
 package com.inveskit.backend.service;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.inveskit.backend.dto.AnalysisRequest;
 import com.inveskit.backend.dto.AnalysisResponse;
@@ -9,8 +8,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
-
-import java.util.List;
 
 @Slf4j
 @Service
@@ -30,7 +27,7 @@ public class AnalysisService {
                 request.getStrategy());
 
         try {
-            // 일단 String으로 받기
+            // String으로 일단 받기
             String responseBody = webClient.post()
                     .uri(analysisApiUrl + "/api/analyze")
                     .bodyValue(request)
@@ -40,18 +37,10 @@ public class AnalysisService {
 
             log.info("Flask API 원본 응답: {}", responseBody);
 
-            // 배열로 받아서 첫 번째 요소 추출
+            // 객체로 직접 파싱
             ObjectMapper mapper = new ObjectMapper();
-            List<AnalysisResponse> responseList = mapper.readValue(
-                    responseBody,
-                    new TypeReference<List<AnalysisResponse>>() {}
-            );
+            AnalysisResponse response = mapper.readValue(responseBody, AnalysisResponse.class);
 
-            if (responseList == null || responseList.isEmpty()) {
-                throw new RuntimeException("Flask API 응답이 비어있습니다.");
-            }
-
-            AnalysisResponse response = responseList.get(0);
             log.info("Flask API 응답 성공 - totalScore: {}, analysis size: {}",
                     response.getTotalScore(),
                     response.getAnalysis() != null ? response.getAnalysis().size() : 0);
